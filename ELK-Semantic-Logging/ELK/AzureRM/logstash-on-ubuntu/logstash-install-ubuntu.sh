@@ -105,6 +105,7 @@ sudo env GEM_HOME=/opt/logstash/vendor/bundle/jruby/1.9 GEM_PATH=\"\" java -jar 
 # Install Plugins
 log "Installing Plugins"
 sudo env GEM_HOME=/opt/logstash/vendor/bundle/jruby/1.9 GEM_PATH=\"\" java -jar /opt/logstash/vendor/jar/jruby-complete-1.7.11.jar -S gem install logstash-input-azurewadtable
+sudo env GEM_HOME=/opt/logstash/vendor/bundle/jruby/1.9 GEM_PATH=\"\" java -jar /opt/logstash/vendor/jar/jruby-complete-1.7.11.jar -S gem install logstash-input-redis
 
 # Copy Plugins
 log "Copying plugins"
