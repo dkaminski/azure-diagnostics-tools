@@ -72,14 +72,14 @@ then
   echo "${HOSTNAME}found in /etc/hosts"
 else
   echo "${HOSTNAME} not found in /etc/hosts"
-  # Append it to the hsots file if not there
+  # Append it to the hosts file if not there
   echo "127.0.0.1 ${HOSTNAME}" >> /etc/hosts
-  log "hostname ${HOSTNAME} added to /etchosts"
+  log "hostname ${HOSTNAME} added to /etc/hosts"
 fi
 
 #Script Parameters
 CLUSTER_NAME="elasticsearch"
-ES_VERSION="1.5.0"
+ES_VERSION="2.4.0"
 DISCOVERY_ENDPOINTS=""
 INSTALL_MARVEL="no" #We use this because of ARM template limitation
 CLIENT_ONLY_NODE=0
@@ -108,7 +108,7 @@ while getopts :n:d:v:l:xyzsh optname; do
     y) #client node
       CLIENT_ONLY_NODE=1
       ;;
-    z) #client node
+    z) #data node
       DATA_NODE=1
       ;;
     s) #use OS striped disk volumes
@@ -170,25 +170,23 @@ install_java()
     apt-get -y update  > /dev/null
     echo debconf shared/accepted-oracle-license-v1-1 select true | sudo debconf-set-selections
     echo debconf shared/accepted-oracle-license-v1-1 seen true | sudo debconf-set-selections
-    apt-get -y install oracle-java7-installer  > /dev/null
+    apt-get -y install oracle-java8-installer  > /dev/null
 }
 
 # Install Elasticsearch
 install_es()
 {
-    # apt-get install approach
-    # This has the added benefit that is simplifies upgrades (user)
-    # Using the debian package because it's easier to explicitly control version and less changes of nodes with different versions
-    #wget -qO - https://packages.elasticsearch.org/GPG-KEY-elasticsearch | sudo apt-key add -
-    #add-apt-repository "deb http://packages.elasticsearch.org/elasticsearch/1.5/debian stable main"
-    #apt-get update && apt-get install elasticsearch
-
-    # if [ -z "$ES_VERSION" ]; then
-    #     ES_VERSION="1.5.0"
-    # fi
+	
+	# Elasticsearch 2.x uses a different download path
+    if [[ "${ES_VERSION}" == \2* ]]; then
+        DOWNLOAD_URL="https://download.elasticsearch.org/elasticsearch/release/org/elasticsearch/distribution/deb/elasticsearch/$ES_VERSION/elasticsearch-$ES_VERSION.deb"
+    else
+        DOWNLOAD_URL="https://download.elasticsearch.org/elasticsearch/elasticsearch/elasticsearch-$ES_VERSION.deb"
+    fi
 
     log "Installing Elaticsearch Version - $ES_VERSION"
-    sudo wget -q "https://download.elasticsearch.org/elasticsearch/elasticsearch/elasticsearch-$ES_VERSION.deb" -O elasticsearch.deb
+	log "Download location - $DOWNLOAD_URL"
+    sudo wget -q "$DOWNLOAD_URL" -O elasticsearch.deb
     sudo dpkg -i elasticsearch.deb
 }
 
@@ -257,9 +255,8 @@ log "Update configuration with hosts configuration of $HOSTS_CONFIG"
 echo "discovery.zen.ping.multicast.enabled: false" >> /etc/elasticsearch/elasticsearch.yml
 echo "discovery.zen.ping.unicast.hosts: $HOSTS_CONFIG" >> /etc/elasticsearch/elasticsearch.yml
 
-
 # Configure Elasticsearch node type
-log "Configure master/client/data node type flags mater-$MASTER_ONLY_NODE data-$DATA_NODE"
+log "Configure master/client/data node type flags master-$MASTER_ONLY_NODE data-$DATA_NODE"
 
 if [ ${MASTER_ONLY_NODE} -ne 0 ]; then
     log "Configure node as master only"
@@ -270,13 +267,17 @@ elif [ ${DATA_NODE} -ne 0 ]; then
     echo "node.master: false" >> /etc/elasticsearch/elasticsearch.yml
     echo "node.data: true" >> /etc/elasticsearch/elasticsearch.yml
 elif [ ${CLIENT_ONLY_NODE} -ne 0 ]; then
-    log "Configure node as data only"
+    log "Configure node as client only"
     echo "node.master: false" >> /etc/elasticsearch/elasticsearch.yml
     echo "node.data: false" >> /etc/elasticsearch/elasticsearch.yml
 else
     log "Configure node for master and data"
     echo "node.master: true" >> /etc/elasticsearch/elasticsearch.yml
     echo "node.data: true" >> /etc/elasticsearch/elasticsearch.yml
+fi
+
+if [[ "${ES_VERSION}" == \2* ]]; then
+    echo "network.host: _non_loopback_" >> /etc/elasticsearch/elasticsearch.yml
 fi
 
 # DNS Retry
@@ -297,7 +298,7 @@ echo "vm.max_map_count = 262144" >> /etc/sysctl.conf
 #TODO: Move this to an init.d script so we can handle instance size increases
 ES_HEAP=`free -m |grep Mem | awk '{if ($2/2 >31744)  print 31744;else print $2/2;}'`
 log "Configure elasticsearch heap size - $ES_HEAP"
-echo "ES_HEAP_SIZE=${ES_HEAP}/" >> /etc/default/elasticseach
+echo "ES_HEAP_SIZE=${ES_HEAP}m" >> /etc/default/elasticsearch
 
 #Optionally Install Marvel
 if [ "${INSTALL_MARVEL}" == "yes" ];
@@ -341,4 +342,3 @@ exit 0
 # gateway.expected_nodes: 10
 # gateway.recover_after_time: 5m
 #----------------------
-

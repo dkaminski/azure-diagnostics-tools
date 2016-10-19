@@ -73,7 +73,7 @@ log "Installing Elasticsearch Completed"
 
 #Install Logstash
 log "Installing Logstash"
-bash ./logstash-install-ubuntu.sh -e $ENCODED_LOGSTASH_CONFIG
+bash ./logstash-install-ubuntu.sh
 log "Installing Logstash Completed"
 
 log "Installing Kibana 4"

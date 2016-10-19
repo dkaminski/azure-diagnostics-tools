@@ -1,121 +1,152 @@
 #!/bin/bash
+
+# The MIT License (MIT)
 #
-# ========================================================================================
-# Microsoft patterns & practices (http://microsoft.com/practices)
-# SEMANTIC LOGGING APPLICATION BLOCK
-# ========================================================================================
+# Copyright (c) 2015 Microsoft Azure
 #
-# Copyright (c) Microsoft.  All rights reserved.
-# Microsoft would like to thank its contributors, a list
-# of whom are at http://aka.ms/entlib-contributors
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 #
-# Licensed under the Apache License, Version 2.0 (the "License"); you
-# may not use this file except in compliance with the License. You may
-# obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-# implied. See the License for the specific language governing permissions
-# and limitations under the License.
+# Trent Swanson (Full Scale 180 Inc)
 #
 
 help()
 {
-    echo ""
-    echo ""
-	echo "This script installs Kibana 4 on Ubuntu, and configures it to be used with a user's elastic search cluster"
-	echo "Parameters:"
-	echo "p - The kibana package to use"
-	echo "s - Skip common install steps (sudo apt-get update/ installing default-jre)"
-	echo ""
-	echo ""
+    echo "Usage: $(basename $0) [-v es_version] [-t target_host] [-m] [-s] [-h]"
+    echo "Options:"
+    echo "  -v    elasticsearch version to target (default: 2.3.1)"
+    echo "  -t    target host (default: http://10.0.1.4:9200)"
+    echo "  -m    install marvel (default: no)"
+    echo "  -s    install sense (default: no)"
+    echo "  -h    this help message"
 }
 
-log()
+error()
 {
-	echo "$1"
-	logger "kibana4-install-ubuntu.sh:" $1
+    echo "$1" >&2
+    exit 3
 }
 
-# Add to Kibana Config
-atkcfg()
-{
-	echo "$1" >> ./kibana.yml
+install_java() {
+    add-apt-repository -y ppa:webupd8team/java
+    apt-get -q -y update  > /dev/null
+    echo debconf shared/accepted-oracle-license-v1-1 select true | debconf-set-selections
+    echo debconf shared/accepted-oracle-license-v1-1 seen true | debconf-set-selections
+    apt-get -q -y install oracle-java8-installer  > /dev/null
 }
 
-#Script Parameters
-KIBANA_PACKAGE_URL="https://download.elasticsearch.org/kibana/kibana/kibana-4.0.0-linux-x64.tar.gz"
+install_kibana() {
+    # default - ES 2.4.0
+	kibana_url="https://download.elastic.co/kibana/kibana/kibana-4.6.0-linux-x64.tar.gz"
+	
+	if [[ "${ES_VERSION}" == "2.2.2" ]]; 
+    then
+		kibana_url="https://download.elastic.co/kibana/kibana/kibana-4.4.2-linux-x64.tar.gz"
+	fi
+    
+    if [[ "${ES_VERSION}" == "2.1.2" ]]; 
+    then
+        kibana_url="https://download.elastic.co/kibana/kibana/kibana-4.3.3-linux-x64.tar.gz"
+    fi
+    
+    if [[ "${ES_VERSION}" == "1.7.5" ]]; 
+    then
+        kibana_url="https://download.elastic.co/kibana/kibana/kibana-4.1.6-linux-x64.tar.gz"
+    fi
+    
+    groupadd -g 999 kibana
+    useradd -u 999 -g 999 kibana
 
-#Loop through options passed
-while getopts :p:sh optname; do
-    log "Option $optname set with value ${OPTARG}"
-  case $optname in
-    p)  #package url
-      KIBANA_PACKAGE_URL=${OPTARG}
-      ;;
-	s)  #skip common install steps
-	  SKIP_COMMON_INSTALL="YES"
-	  ;;
-    h)  #show help
-      help
-      exit 2
-      ;;
-    \?) #unrecognized option - show help
-      echo -e \\n"Option -${BOLD}$OPTARG${NORM} not allowed."
-      help
-      exit 2
-      ;;
+    mkdir -p /opt/kibana
+    curl -s -o kibana.tar.gz ${kibana_url}
+    tar xvf kibana.tar.gz -C /opt/kibana/ --strip-components=1 > /dev/null
+
+    chown -R kibana: /opt/kibana
+    #mv /opt/kibana/config/kibana.yml /opt/kibana/config/kibana.yml.bak
+
+    #if [[ "${ES_VERSION}" == \2* ]];
+    #then
+    #    echo "server.port: 80" >> /opt/kibana/config/kibana.yml
+    #else
+    #    cat /opt/kibana/config/kibana.yml.bak | sed "s|http://localhost:9200|${ELASTICSEARCH_URL}|" >> /opt/kibana/config/kibana.yml 
+    #fi
+
+    # install the marvel plugin for 2.x
+    if [ ${INSTALL_MARVEL} -ne 0 ];
+    then
+		if [[ "${ES_VERSION}" == \2* ]];
+        then
+            /opt/kibana/bin/kibana plugin --install elasticsearch/marvel/${ES_VERSION}
+        fi
+
+        # for 1.x marvel is installed only within the cluster, not on the kibana node 
+    fi
+    
+    # install the sense plugin for 2.x
+    if [ ${INSTALL_SENSE} -ne 0 ];
+    then
+        if [[ "${ES_VERSION}" == \2* ]];
+        then
+            /opt/kibana/bin/kibana plugin --install elastic/sense
+        fi
+                
+        # for 1.x sense is not supported 
+    fi
+
+# Add upstart task and start kibana service
+cat << EOF > /etc/init/kibana.conf
+    # kibana
+    description "Elasticsearch Kibana Service"
+
+    start on starting
+    script
+        /opt/kibana/bin/kibana
+    end script
+EOF
+
+    chmod +x /etc/init/kibana.conf
+    service kibana start
+}
+
+###############
+
+if [ "${UID}" -ne 0 ];
+then
+    error "You must be root to run this script."
+fi
+
+ES_VERSION="2.4.0"
+INSTALL_MARVEL=0
+INSTALL_SENSE=0
+ELASTICSEARCH_URL="http://localhost:9200"
+
+while getopts :v:t:msh optname; do
+  case ${optname} in
+    v) ES_VERSION=${OPTARG};;
+    m) INSTALL_MARVEL=1;;
+    s) INSTALL_SENSE=1;;
+    t) ELASTICSEARCH_URL=${OPTARG};; 
+    h) help; exit 1;;
+   \?) help; error "Option -${OPTARG} not supported.";;
+    :) help; error "Option -${OPTARG} requires an argument.";;
   esac
 done
 
-# Install Kibana
-if [ -z $SKIP_COMMON_INSTALL ] 
-then
-  log "Updating apt-get"
-  sudo apt-get update
-  log "Installing Java Runtime"
-  sudo apt-get -f -y install default-jre
-else
-  log "Skipping common install"
-fi
-
-log "Downloading Kibana"
-wget $KIBANA_PACKAGE_URL -O ./kibana.tar.gz
-
-log "Download Completed, Installing Kibana"
-mkdir ./kibana
-sudo tar -xf ./kibana.tar.gz -C ./kibana --strip 1
-
-#Create User Configuration
-atkcfg "port: 80"
-atkcfg "host: \"0.0.0.0\""
-#TODO: This should be configurable from the script
-atkcfg "elasticsearch_url: \"http://localhost:9200\""
-atkcfg "elasticsearch_preserve_host: true"
-atkcfg "kibana_index: \".kibana\""
-atkcfg "default_app_id: \"discover\"" 
-atkcfg "request_timeout: 500000"
-atkcfg "shard_timeout: 0"
-atkcfg "verify_ssl: true"
-atkcfg "bundled_plugin_ids:"
-atkcfg " - plugins/dashboard/index"
-atkcfg " - plugins/discover/index"
-atkcfg " - plugins/doc/index"
-atkcfg " - plugins/kibana/index"
-atkcfg " - plugins/markdown_vis/index"
-atkcfg " - plugins/metric_vis/index"
-atkcfg " - plugins/settings/index"
-atkcfg " - plugins/table_vis/index"
-atkcfg " - plugins/vis_types/index"
-atkcfg " - plugins/visualize/index"
-
-#Install User Configuration
-log "Installing user configuration file"
-sudo \cp ./kibana.yml ./kibana/config/
-
-# Configure Start
-log "Starting Kibana"
-screen -d -m sh -c "while :; do sudo ./kibana/bin/kibana; done;"
+# don't need to install java because this is a single server and it's already been done
+#install_java
+install_kibana

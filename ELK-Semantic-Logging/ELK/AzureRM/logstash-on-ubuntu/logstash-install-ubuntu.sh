@@ -26,42 +26,53 @@ help()
 {
     echo ""
     echo ""
-	echo "This script installs Logstash 1.4.2 on Ubuntu, and configures it to be used with user plugins/configurations"
-	echo "Parameters:"
-	echo "p - The logstash package url to use. Currently tested to work on Logstash version 1.4.2."
-	echo "e - The encoded configuration string."
-	echo ""
-	echo ""
-	echo ""
+    echo "This script installs Logstash on Ubuntu, and configures it to be used with Event Hub plugin."
+    echo "Parameters:"
+    echo "n - Event Hub namespace"
+	echo "a - Event Hub shared access key name"
+	echo "k - Event Hub shared access key"
+	echo "e - Event Hub entity path"
+	echo "p - Event Hub partitions"
+	echo "i - Elasticsearch IP"
+    echo ""
+    echo ""
+    echo ""
 }
 
 log()
 {
-	echo "$1"
+    echo "$1"
 }
 
-#Script Parameters
-LOGSTASH_DEBIAN_PACKAGE_URL="https://download.elasticsearch.org/logstash/logstash/packages/debian/logstash_1.4.2-1-2c0f5a1_all.deb"
-
 #Loop through options passed
-while getopts :p:e:hs optname; do
+while getopts :hsn:a:k:e:p:i: optname; do
     log "Option $optname set with value ${OPTARG}"
   case $optname in
-    p)  #package url
-      LOGSTASH_DEBIAN_PACKAGE_URL=${OPTARG}
-      ;;
-	s)  #skip common install steps
-	  SKIP_COMMON_INSTALL="YES"
-	  ;;
     h)  #show help
       help
       exit 2
       ;;
-    e)  #set the encoded configuration string
-	  log "Setting the encoded configuration string"
-      CONF_FILE_ENCODED_STRING="${OPTARG}"
-      USE_CONF_FILE_FROM_ENCODED_STRING="true"
+    s)  #skip common install steps
+      SKIP_COMMON_INSTALL="YES"
       ;;
+    n)
+	  EH_NAMESPACE=${OPTARG}
+      ;;
+    a)
+      EH_KEY_NAME=${OPTARG}
+      ;;
+    k)
+      EH_KEY=${OPTARG}
+      ;;
+    e)
+      EH_ENTITY=${OPTARG}
+      ;;
+    p)
+      EH_PARTITIONS=${OPTARG}
+      ;;
+    i)
+      ES_CLUSTER_IP=${OPTARG}
+	  ;;
     \?) #unrecognized option - show help
       echo -e \\n"Option -${BOLD}$OPTARG${NORM} not allowed."
       help
@@ -72,46 +83,52 @@ done
 
 # Install Logstash
 
+
 if [ -z $SKIP_COMMON_INSTALL ] 
 then
-  log "Updating apt-get"
-  sudo apt-get update
-  log "Installing Java Runtime"
-  sudo apt-get -f -y install default-jre
+
+    # Install Utilities
+    log "Installing utilities." 
+    sudo apt-get update
+    sudo apt-get -y --force-yes install python-software-properties debconf-utils
+
+    # Install Java
+    #log "Installing Java." 
+    #sudo add-apt-repository -y ppa:webupd8team/java
+    #sudo apt-get update
+    #echo "oracle-java8-installer shared/accepted-oracle-license-v1-1 select true" | sudo debconf-set-selections
+    #sudo apt-get install -y --force-yes oracle-java8-installer
+
 else
   log "Skipping common install"
 fi
 
-log "Downloading logstash package"
-wget ${LOGSTASH_DEBIAN_PACKAGE_URL} -O logstash.deb
-log "Download completed, Installing Logstash"
-sudo dpkg -i logstash.deb
+# Install Logstash
+# Download and install the Public Signing Key:
+log "Installing Logstash."
+wget -qO - https://packages.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add -
+# Add the repository definition to your /etc/apt/sources.list file:
+echo "deb http://packages.elastic.co/logstash/2.4/debian stable main" | sudo tee -a /etc/apt/sources.list
+# Get latest package information:
+sudo apt-get update
+# Install logstash package:
+sudo apt-get -y --force-yes install logstash
 
-# Install User Configuration from encoded string
-if [ ! -z $USE_CONF_FILE_FROM_ENCODED_STRING ] 
-then
-  log "Decoding configuration string"
-  log "$CONF_FILE_ENCODED_STRING"
-  echo $CONF_FILE_ENCODED_STRING > logstash.conf.encoded
-  DECODED_STRING=$(base64 -d logstash.conf.encoded)
-  log "$DECODED_STRING"
-  echo $DECODED_STRING > ~/logstash.conf
-fi
+# Install Azure WAD Event Hub Plugin
+log "Installing Plugins: Azure WAD Event Hub and Redis"
+sudo /opt/logstash/bin/logstash-plugin install logstash-input-azurewadeventhub
+sudo /opt/logstash/bin/logstash-plugin install logstash-input-redis
 
-# Install Azure
-log "Installing Azure SDK"
-sudo env GEM_HOME=/opt/logstash/vendor/bundle/jruby/1.9 GEM_PATH=\"\" java -jar /opt/logstash/vendor/jar/jruby-complete-1.7.11.jar -S gem install azure
+# Install Logstash configuration
 
-# Install Plugins
-log "Installing Plugins"
-sudo env GEM_HOME=/opt/logstash/vendor/bundle/jruby/1.9 GEM_PATH=\"\" java -jar /opt/logstash/vendor/jar/jruby-complete-1.7.11.jar -S gem install logstash-input-azurewadtable
-sudo env GEM_HOME=/opt/logstash/vendor/bundle/jruby/1.9 GEM_PATH=\"\" java -jar /opt/logstash/vendor/jar/jruby-complete-1.7.11.jar -S gem install logstash-input-redis
+log "Generating Logstash Config"
+echo "input {" > ~/logstash.conf
+#echo "  azurewadeventhub {key => '$EH_KEY' username => '$EH_KEY_NAME' eventhub => '$EH_ENTITY'  namespace => '$EH_NAMESPACE' partitions => $EH_PARTITIONS}" >> ~/logstash.conf
+echo "  redis {data_type => 'list' host => 'logz.redis.cache.windows.net' key => 'h4me_layer7_gateway_calls' password => 'G7tLcCJAcBywLqd4O6DKrdlPfnJbVHk3jgnqxfVXRFY=' port => 6379}" >> ~/logstash.conf
+echo "}" >> ~/logstash.conf
+echo "output {elasticsearch {hosts => ['localhost:9200'] index => 'logstash-default'}}" >> ~/logstash.conf
+cat ~/logstash.conf
 
-# Copy Plugins
-log "Copying plugins"
-sudo \cp -f /opt/logstash/vendor/bundle/jruby/1.9/gems/logstash-input-azurewadtable-0.9.2/lib/logstash/inputs/azurewadtable.rb /opt/logstash/lib/logstash/inputs/azurewadtable.rb
-
-#log "Installing user configuration file"
 log "Installing user configuration file"
 sudo \cp -f ~/logstash.conf /etc/logstash/conf.d/
 

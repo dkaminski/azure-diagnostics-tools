@@ -11,18 +11,12 @@
         },
         "esVersion": {
             "type": "string",
-            "defaultValue": "1.5.2",
+            "defaultValue": "2.4.0",
             "allowedValues": [
-                "1.5.2"
+                "2.4.0"
             ],
             "metadata": {
                 "description": "Elasticsearch version to install"
-            }
-        },
-        "encodedConfigString": {
-            "type": "string",
-            "metadata": {
-                "description": "Base64 encoded Logstash configuration string."
             }
         },
         "newStorageAccountName": {
@@ -51,14 +45,14 @@
         },
         "ubuntuOSVersion": {
             "type": "string",
-            "defaultValue": "14.04.2-LTS",
+            "defaultValue": "14.04.4-LTS",
             "allowedValues": [
                 "12.04.2-LTS",
                 "12.04.3-LTS",
                 "12.04.4-LTS",
                 "12.04.5-LTS",
                 "12.10",
-                "14.04.2-LTS",
+                "14.04.4-LTS",
                 "14.10",
                 "15.04"
             ],
@@ -82,6 +76,7 @@
         "publicIPAddressType": "Dynamic",
         "vmStorageAccountContainerName": "vhds",
         "vmName": "MyUbuntuVM",
+        "vmNsgName": "[concat(variables('vmName'), '-nsg')]",
         "vmSize": "Standard_D1",
         "virtualNetworkName": "MyVNET",
         "vnetID": "[resourceId('Microsoft.Network/virtualNetworks',variables('virtualNetworkName'))]",
@@ -101,7 +96,45 @@
             }
         },
         {
-            "apiVersion": "2015-05-01-preview",
+            "apiVersion": "2016-03-30",
+            "type": "Microsoft.Network/networkSecurityGroups",
+            "name": "[variables('vmNsgName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "securityRules": [
+                    {
+                        "name": "SSH",
+                        "properties": {
+                            "description": "Allows SSH traffic",
+                            "protocol": "Tcp",
+                            "sourcePortRange": "22",
+                            "destinationPortRange": "22",
+                            "sourceAddressPrefix": "*",
+                            "destinationAddressPrefix": "*",
+                            "access": "Allow",
+                            "priority": 100,
+                            "direction": "Inbound"
+                        }
+                    },
+                    {
+                        "name": "Kibana",
+                        "properties": {
+                            "description": "Allows inbound Kibana HTTP traffic from anyone",
+                            "protocol": "Tcp",
+                            "sourcePortRange": "5601",
+                            "destinationPortRange": "5601",
+                            "sourceAddressPrefix": "*",
+                            "destinationAddressPrefix": "*",
+                            "access": "Allow",
+                            "priority": 200,
+                            "direction": "Inbound"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "apiVersion": "2016-03-03",
             "type": "Microsoft.Network/publicIPAddresses",
             "name": "[parameters('dnsNameForPublicIP')]",
             "location": "[variables('location')]",
@@ -148,6 +181,7 @@
                 "displayName": "NetworkInterface"
             },
             "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', variables('vmNsgName'))]",
                 "[concat('Microsoft.Network/publicIPAddresses/', parameters('dnsNameForPublicIP'))]",
                 "[concat('Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'))]"
             ],
@@ -162,6 +196,9 @@
                             },
                             "subnet": {
                                 "id": "[variables('subnetRef')]"
+                            },
+                            "networkSecurityGroup": {
+                                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('vmNsgName'))]"
                             }
                         }
                     }
@@ -169,7 +206,7 @@
             }
         },
         {
-            "apiVersion": "2015-05-01-preview",
+            "apiVersion": "2015-06-15",
             "type": "Microsoft.Compute/virtualMachines",
             "name": "[variables('vmName')]",
             "location": "[variables('location')]",
@@ -228,7 +265,7 @@
                 "typeHandlerVersion": "1.2",
                 "settings": {
                     "fileUris": [ "https://raw.githubusercontent.com/dkaminski/azure-diagnostics-tools/master/ELK-Semantic-Logging/ELK/AzureRM/elk-simple-on-ubuntu/elk-simple-install-ubuntu.sh" ],
-                    "commandToExecute": "[concat('bash ./elk-simple-install-ubuntu.sh -n ', parameters('esClusterName'), ' -v ', parameters('esVersion'), ' -d ', variables('esDiscoveryHosts'), ' -e ', parameters('encodedConfigString'))]"
+                    "commandToExecute": "[concat('bash ./elk-simple-install-ubuntu.sh -n ', parameters('esClusterName'), ' -v ', parameters('esVersion'), ' -d ', variables('esDiscoveryHosts'))]"
                 }
             }
         }

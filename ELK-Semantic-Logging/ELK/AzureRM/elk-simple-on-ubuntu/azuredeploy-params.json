@@ -11,9 +11,6 @@
         "dnsNameForPublicIP": {
             "value": "null"
         },
-        "encodedConfigString": {
-            "value": "null"
-        },
         "ubuntuOSVersion": {
             "null"
         }
