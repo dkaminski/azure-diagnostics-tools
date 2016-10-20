@@ -80,7 +80,11 @@
         "vmSize": "Standard_D1",
         "virtualNetworkName": "MyVNET",
         "vnetID": "[resourceId('Microsoft.Network/virtualNetworks',variables('virtualNetworkName'))]",
-        "subnetRef": "[concat(variables('vnetID'),'/subnets/',variables('subnetName'))]"
+        "subnetRef": "[concat(variables('vnetID'),'/subnets/',variables('subnetName'))]",
+        "installScripts": [
+          "https://raw.githubusercontent.com/dkaminski/azure-quickstart-templates/master/shared_scripts/ubuntu/vm-disk-utils-0.1.sh",
+          "https://raw.githubusercontent.com/dkaminski/azure-diagnostics-tools/master/ELK-Semantic-Logging/ELK/AzureRM/elk-simple-on-ubuntu/elk-simple-install-ubuntu.sh"
+        ]
     },
     "resources": [
         {
@@ -264,7 +268,7 @@
                 "type": "CustomScriptForLinux",
                 "typeHandlerVersion": "1.2",
                 "settings": {
-                    "fileUris": [ "https://raw.githubusercontent.com/dkaminski/azure-diagnostics-tools/master/ELK-Semantic-Logging/ELK/AzureRM/elk-simple-on-ubuntu/elk-simple-install-ubuntu.sh" ],
+                    "fileUris": "[variables('installScripts')]",
                     "commandToExecute": "[concat('bash ./elk-simple-install-ubuntu.sh -n ', parameters('esClusterName'), ' -v ', parameters('esVersion'), ' -d ', variables('esDiscoveryHosts'))]"
                 }
             }
