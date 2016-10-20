@@ -276,10 +276,6 @@ else
     echo "node.data: true" >> /etc/elasticsearch/elasticsearch.yml
 fi
 
-if [[ "${ES_VERSION}" == \2* ]]; then
-    echo "network.host: _non_loopback_" >> /etc/elasticsearch/elasticsearch.yml
-fi
-
 # DNS Retry
 echo "options timeout:1 attempts:5" >> /etc/resolvconf/resolv.conf.d/head
 resolvconf -u
