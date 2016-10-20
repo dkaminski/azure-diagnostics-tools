@@ -69,8 +69,8 @@ install_kibana() {
         kibana_url="https://download.elastic.co/kibana/kibana/kibana-4.1.6-linux-x64.tar.gz"
     fi
     
-    groupadd -g 999 kibana
-    useradd -u 999 -g 999 kibana
+    groupadd -g 998 kibana
+    useradd -u 998 -g 998 kibana
 
     mkdir -p /opt/kibana
     curl -s -o kibana.tar.gz ${kibana_url}
